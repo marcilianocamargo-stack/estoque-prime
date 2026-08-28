@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a56a0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Estoque Prime">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<title>Consulta de Estoque · Prime Ondulados</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #d6e4f4;
+  min-height: 100vh;
+  padding: 14px 12px 50px;
+}
+
+.wrap { max-width: 900px; margin: 0 auto; }
+
+.header {
+  background: #1a56a0;
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.logo-box {
+  width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0;
+  background: white center/32px no-repeat url('./icon-192.png');
+}
+.header-txt { flex: 1; min-width: 200px; }
+.header-txt h1 { color: white; font-size: 21px; font-weight: 700; line-height: 1.2; }
+.header-txt p  { color: #a8c8f0; font-size: 14px; margin-top: 3px; }
+.header-atualizado { color: #cfe0f5; font-size: 12px; white-space: nowrap; }
+.hidden { display: none !important; }
+.btn-instalar {
+  background: white; color: #1a56a0; border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap;
+}
+
+.busca-wrap {
+  background: white;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+}
+.busca-wrap input {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 10px;
+  border: 2px solid #b8cfe8;
+  font-size: 18px;
+  outline: none;
+  background: #f4f8ff;
+}
+.busca-wrap input:focus { border-color: #1a56a0; background: white; }
+
+.resumo-topo {
+  font-size: 13px;
+  color: #4a6a8f;
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.cliente-card {
+  background: white;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+.cliente-titulo {
+  background: #eef4ff;
+  padding: 12px 18px;
+  font-weight: 800;
+  font-size: 17px;
+  color: #1a56a0;
+  border-bottom: 2px solid #dce8fa;
+}
+.cliente-titulo .qtd-ops { font-size: 12px; font-weight: 600; color: #6a86a8; margin-left: 8px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 14px; font-size: 14px; }
+thead th {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+  color: #7a92ac; font-weight: 700; border-bottom: 1px solid #e4ecf6;
+}
+tbody tr:not(:last-child) td { border-bottom: 1px solid #eef3fa; }
+tbody tr:hover { background: #f7fafd; }
+td.num { font-weight: 800; color: #1a56a0; }
+td.destaque { font-weight: 700; }
+
+.tabela-scroll { overflow-x: auto; }
+
+.vazio {
+  text-align: center;
+  color: #8098b5;
+  font-size: 16px;
+  padding: 40px 20px;
+  font-style: italic;
+}
+.arq-status {
+  font-size: 15px; font-weight: 700; margin-top: 10px; padding: 10px 14px;
+  border-radius: 10px; display: none;
+}
+.arq-status.ok   { background: #e8f5e9; color: #2e7d32; display: block; }
+.arq-status.err  { background: #fdecea; color: #c62828; display: block; }
+.arq-status.info { background: #e3f2fd; color: #1565c0; display: block; }
+
+.footer { margin-top: 20px; text-align: center; color: #7a9abf; font-size: 13px; padding-bottom: 24px; }
+
+@media (max-width: 560px) {
+  .header-atualizado { display: none; }
+  th, td { padding: 8px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="logo-box"></div>
+    <div class="header-txt">
+      <h1>Consulta de Estoque</h1>
+      <p>Prime Ondulados · Paletes prontos, ainda não expedidos</p>
+    </div>
+    <div class="header-atualizado" id="headerAtualizado">—</div>
+    <button class="btn-instalar hidden" id="btn-instalar-app" type="button">⬇ Instalar app</button>
+  </div>
+
+  <div id="cardStatus" class="arq-status info">⏳ Carregando estoque...</div>
+
+  <div class="busca-wrap">
+    <input type="text" id="buscaCliente" placeholder="🔍 Filtrar por cliente..." oninput="renderizar()">
+    <div class="resumo-topo" id="resumoTopo"></div>
+  </div>
+
+  <div id="listaClientes"></div>
+
+  <div class="footer">Consulta de Estoque · Prime Ondulados · atualiza sozinho a cada minuto</div>
+</div>
+
+<script>
+// Busca direto do repo-fonte (controle-producao-etiquetas), via
+// raw.githubusercontent.com -- não depende do build do GitHub Pages desse
+// outro repo, mesmo padrão já usado pelo Romaneio pra ler o mesmo arquivo.
+const ESTOQUE_URL = 'https://raw.githubusercontent.com/marcilianocamargo-stack/controle-producao-etiquetas/main/estoque.json';
+let paletes = [];
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+function norm(s) {
+  return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+async function carregar() {
+  const status = document.getElementById('cardStatus');
+  status.className = 'arq-status info';
+  status.textContent = '⏳ Carregando estoque...';
+  try {
+    const resp = await fetch(ESTOQUE_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) throw new Error('sem arquivo');
+    const dados = await resp.json();
+    paletes = Array.isArray(dados.paletes) ? dados.paletes : [];
+    status.className = 'arq-status ok';
+    status.textContent = `✓ ${paletes.length} palete(s) em estoque`;
+    let quando = '—';
+    if (dados.atualizadoEm) {
+      const d = new Date(dados.atualizadoEm);
+      if (!isNaN(d.getTime())) {
+        quando = 'Atualizado ' + d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+      }
+    }
+    document.getElementById('headerAtualizado').textContent = quando;
+    renderizar();
+  } catch (err) {
+    status.className = 'arq-status err';
+    status.textContent = '⚠ Não consegui carregar o estoque agora. Tentando de novo em instantes...';
+  }
+}
+
+// Agrupa por Cliente -> (OP + OC), somando paletes/chapas de cada grupo.
+// Uma mesma OP pode ter mais de um pedido (OC) dentro dela, com medida e
+// papel diferentes -- por isso o agrupamento é por OP+OC, não só por OP.
+function agrupar(lista) {
+  const porCliente = new Map();
+  for (const p of lista) {
+    const cliente = p.cliente || '(sem cliente)';
+    if (!porCliente.has(cliente)) porCliente.set(cliente, new Map());
+    const grupos = porCliente.get(cliente);
+    const chave = p.of + '|' + p.oc;
+    if (!grupos.has(chave)) {
+      grupos.set(chave, {
+        of: p.of || '', oc: p.oc || '', papel: p.papelao || '',
+        medida: p.medida || '', numPaletes: 0, chapas: 0,
+        qtdePedido: parseFloat(p.qtdePedido) || 0,
+      });
+    }
+    const g = grupos.get(chave);
+    g.numPaletes += 1;
+    g.chapas += Number(p.chapas) || 0;
+  }
+  return porCliente;
+}
+
+function renderizar() {
+  const filtro = norm(document.getElementById('buscaCliente').value);
+  const porCliente = agrupar(paletes);
+  const clientes = [...porCliente.keys()]
+    .filter(c => !filtro || norm(c).includes(filtro))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  const div = document.getElementById('listaClientes');
+  const resumoTopo = document.getElementById('resumoTopo');
+
+  if (!paletes.length) {
+    div.innerHTML = '';
+    resumoTopo.textContent = '';
+    return;
+  }
+  if (!clientes.length) {
+    div.innerHTML = '<div class="vazio">Nenhum cliente encontrado com esse filtro.</div>';
+    resumoTopo.textContent = '';
+    return;
+  }
+
+  const totalPaletesFiltrado = clientes.reduce((s, c) => {
+    for (const g of porCliente.get(c).values()) s += g.numPaletes;
+    return s;
+  }, 0);
+  resumoTopo.textContent = `${clientes.length} cliente(s) · ${totalPaletesFiltrado} palete(s) em estoque`;
+
+  div.innerHTML = clientes.map(cliente => {
+    const grupos = [...porCliente.get(cliente).values()].sort((a, b) => String(a.of).localeCompare(String(b.of)));
+    const linhas = grupos.map(g => `
+      <tr>
+        <td class="destaque">${esc(g.of)}</td>
+        <td>${esc(g.oc || '—')}</td>
+        <td>${esc(g.papel || '—')}</td>
+        <td>${esc(g.medida || '—')}</td>
+        <td class="num">${fmt(g.numPaletes)}</td>
+        <td class="num">${fmt(g.chapas)}</td>
+        <td class="num">${g.qtdePedido ? fmt(g.qtdePedido) : '—'}</td>
+        <td class="num" style="color:${g.qtdePedido && g.chapas >= g.qtdePedido ? '#2e7d32' : '#c62828'}">${g.qtdePedido ? fmt(g.qtdePedido - g.chapas) : '—'}</td>
+      </tr>`).join('');
+    return `
+      <div class="cliente-card">
+        <div class="cliente-titulo">${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span></div>
+        <div class="tabela-scroll">
+          <table>
+            <thead><tr>
+              <th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
+            </tr></thead>
+            <tbody>${linhas}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+carregar();
+setInterval(carregar, 60000);
+
+// ========== INSTALAR APP ==========
+// Repositório e origem PRÓPRIOS deste app (separado do de Etiquetas) --
+// assim o Chrome não confunde a identidade de instalação com o outro app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  document.getElementById('btn-instalar-app').classList.remove('hidden');
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  document.getElementById('btn-instalar-app').classList.add('hidden');
+});
+document.getElementById('btn-instalar-app').addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.getElementById('btn-instalar-app').classList.add('hidden');
+});
+</script>
+</body>
+</html>
