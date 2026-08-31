@@ -117,11 +117,42 @@ td.destaque { font-weight: 700; }
 .arq-status.err  { background: #fdecea; color: #c62828; display: block; }
 .arq-status.info { background: #e3f2fd; color: #1565c0; display: block; }
 
-.footer { margin-top: 20px; text-align: center; color: #7a9abf; font-size: 13px; padding-bottom: 24px; }
+.footer { margin-top: 20px; text-align: center; color: #7a9abf; font-size: 13px; padding-bottom: 90px; }
+
+.acoes-selecao { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.btn-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #1a56a0; font-size: 13px; font-weight: 700; text-decoration: underline;
+}
+
+th.chk, td.chk { width: 30px; text-align: center; padding-left: 12px; padding-right: 4px; }
+input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color: #1a56a0; }
+.cliente-titulo { display: flex; align-items: center; gap: 10px; }
+.cliente-titulo .chk-cliente { flex-shrink: 0; }
+
+.barra-selecao {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: #1a56a0; color: white;
+  padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; box-shadow: 0 -4px 16px rgba(0,0,0,.2); z-index: 50;
+}
+.barra-selecao.hidden { display: none; }
+.barra-info { font-weight: 700; font-size: 14px; }
+.barra-botoes { display: flex; gap: 10px; }
+.barra-botoes button {
+  border: none; border-radius: 8px; padding: 11px 16px; font-size: 14px;
+  font-weight: 800; cursor: pointer; white-space: nowrap;
+}
+#btnLimparSelecao { background: rgba(255,255,255,.18); color: white; }
+#btnDarBaixaSelecionados { background: white; color: #c62828; }
+#btnDarBaixaSelecionados:disabled { opacity: .6; cursor: default; }
 
 @media (max-width: 560px) {
   .header-atualizado { display: none; }
   th, td { padding: 8px 10px; font-size: 13px; }
+  .barra-selecao { flex-direction: column; align-items: stretch; }
+  .barra-botoes { justify-content: stretch; }
+  .barra-botoes button { flex: 1; }
 }
 </style>
 </head>
@@ -143,6 +174,10 @@ td.destaque { font-weight: 700; }
   <div class="busca-wrap">
     <input type="text" id="buscaCliente" placeholder="🔍 Filtrar por cliente..." oninput="renderizar()">
     <div class="resumo-topo" id="resumoTopo"></div>
+    <div class="acoes-selecao">
+      <button type="button" class="btn-link" id="btnSelecionarTodos">☑ Selecionar todos os visíveis</button>
+      <button type="button" class="btn-link" id="btnLimparSelecaoTopo">Limpar seleção</button>
+    </div>
   </div>
 
   <div id="listaClientes"></div>
@@ -150,12 +185,24 @@ td.destaque { font-weight: 700; }
   <div class="footer">Consulta de Estoque · Prime Ondulados · atualiza sozinho a cada minuto</div>
 </div>
 
+<div class="barra-selecao hidden" id="barraSelecao">
+  <div class="barra-info" id="barraInfo"></div>
+  <div class="barra-botoes">
+    <button type="button" id="btnLimparSelecao">Limpar</button>
+    <button type="button" id="btnDarBaixaSelecionados">🗑 Dar baixa nos selecionados</button>
+  </div>
+</div>
+
 <script>
 // Busca direto do repo-fonte (controle-producao-etiquetas), via
 // raw.githubusercontent.com -- não depende do build do GitHub Pages desse
 // outro repo, mesmo padrão já usado pelo Romaneio pra ler o mesmo arquivo.
 const ESTOQUE_URL = 'https://raw.githubusercontent.com/marcilianocamargo-stack/controle-producao-etiquetas/main/estoque.json';
+// Mesmo webhook n8n que o Romaneio usa pra dar baixa -- garante que a baixa
+// feita por aqui é processada exatamente da mesma forma (remove do estoque.json).
+const SAIDA_WEBHOOK_URL = 'https://n8n.mcamargo.uk/webhook/saida-estoque';
 let paletes = [];
+let selecionados = new Set(); // chaves "of|oc" dos pedidos marcados pra dar baixa
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -218,6 +265,13 @@ function agrupar(lista) {
 function renderizar() {
   const filtro = norm(document.getElementById('buscaCliente').value);
   const porCliente = agrupar(paletes);
+
+  // Limpa da seleção qualquer pedido que já não exista mais nos dados atuais
+  // (ex.: baixa já processada em outro lugar, ou saiu do estoque).
+  const chavesAtuais = new Set();
+  porCliente.forEach(grupos => grupos.forEach(g => chavesAtuais.add(g.of + '|' + g.oc)));
+  [...selecionados].forEach(k => { if (!chavesAtuais.has(k)) selecionados.delete(k); });
+
   const clientes = [...porCliente.keys()]
     .filter(c => !filtro || norm(c).includes(filtro))
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -228,11 +282,13 @@ function renderizar() {
   if (!paletes.length) {
     div.innerHTML = '';
     resumoTopo.textContent = '';
+    atualizarBarraSelecao();
     return;
   }
   if (!clientes.length) {
     div.innerHTML = '<div class="vazio">Nenhum cliente encontrado com esse filtro.</div>';
     resumoTopo.textContent = '';
+    atualizarBarraSelecao();
     return;
   }
 
@@ -242,10 +298,23 @@ function renderizar() {
   }, 0);
   resumoTopo.textContent = `${clientes.length} cliente(s) · ${totalPaletesFiltrado} palete(s) em estoque`;
 
+  // Arrays paralelos à ordem de renderização dos checkboxes -- evita ter que
+  // colocar nome de cliente/OC cru dentro de atributo HTML (escaping).
+  const ordemGrupos = [];
+  const ordemClientesGrupos = [];
+
   div.innerHTML = clientes.map(cliente => {
     const grupos = [...porCliente.get(cliente).values()].sort((a, b) => String(a.of).localeCompare(String(b.of)));
-    const linhas = grupos.map(g => `
+    const chavesDoCliente = grupos.map(g => g.of + '|' + g.oc);
+    ordemClientesGrupos.push(chavesDoCliente);
+    const clienteTodoSelecionado = chavesDoCliente.length > 0 && chavesDoCliente.every(k => selecionados.has(k));
+
+    const linhas = grupos.map(g => {
+      const chave = g.of + '|' + g.oc;
+      ordemGrupos.push(chave);
+      return `
       <tr>
+        <td class="chk"><input type="checkbox" class="chk-grupo" ${selecionados.has(chave) ? 'checked' : ''}></td>
         <td class="destaque">${esc(g.of)}</td>
         <td>${esc(g.oc || '—')}</td>
         <td>${esc(g.papel || '—')}</td>
@@ -254,21 +323,135 @@ function renderizar() {
         <td class="num">${fmt(g.chapas)}</td>
         <td class="num">${g.qtdePedido ? fmt(g.qtdePedido) : '—'}</td>
         <td class="num" style="color:${g.qtdePedido && g.chapas >= g.qtdePedido ? '#2e7d32' : '#c62828'}">${g.qtdePedido ? fmt(g.qtdePedido - g.chapas) : '—'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
     return `
       <div class="cliente-card">
-        <div class="cliente-titulo">${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span></div>
+        <div class="cliente-titulo">
+          <input type="checkbox" class="chk-cliente" ${clienteTodoSelecionado ? 'checked' : ''} title="Selecionar todos os pedidos de ${esc(cliente)}">
+          <span>${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span></span>
+        </div>
         <div class="tabela-scroll">
           <table>
             <thead><tr>
-              <th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
+              <th class="chk"></th><th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
         </div>
       </div>`;
   }).join('');
+
+  div.querySelectorAll('.chk-grupo').forEach((chk, i) => {
+    chk.addEventListener('change', () => {
+      const chave = ordemGrupos[i];
+      if (chk.checked) selecionados.add(chave); else selecionados.delete(chave);
+      atualizarBarraSelecao();
+      // reflete no checkbox "selecionar todos" do cliente sem re-renderizar tudo
+      const card = chk.closest('.cliente-card');
+      const chkCliente = card.querySelector('.chk-cliente');
+      const todasChk = [...card.querySelectorAll('.chk-grupo')];
+      chkCliente.checked = todasChk.every(c => c.checked);
+    });
+  });
+  div.querySelectorAll('.chk-cliente').forEach((chk, i) => {
+    chk.addEventListener('change', () => {
+      const chaves = ordemClientesGrupos[i];
+      if (chk.checked) chaves.forEach(c => selecionados.add(c));
+      else chaves.forEach(c => selecionados.delete(c));
+      renderizar();
+    });
+  });
+
+  atualizarBarraSelecao();
 }
+
+// ========== SELEÇÃO MÚLTIPLA + BAIXA EM LOTE ==========
+// Cada linha (OP+OC) representa um pedido inteiro; dar baixa manda TODOS os
+// paletes daquele pedido pro mesmo webhook que o Romaneio usa (saida-estoque).
+function itensParaBaixa(chaves) {
+  const set = new Set(chaves);
+  const itens = [];
+  paletes.forEach(p => {
+    const chave = (p.of || '') + '|' + (p.oc || '');
+    if (set.has(chave)) itens.push({ of: p.of, numPalete: String(p.numPalete) });
+  });
+  return itens;
+}
+
+function atualizarBarraSelecao() {
+  const barra = document.getElementById('barraSelecao');
+  const info = document.getElementById('barraInfo');
+  const btn = document.getElementById('btnDarBaixaSelecionados');
+  if (!selecionados.size) {
+    barra.classList.add('hidden');
+    return;
+  }
+  const itens = itensParaBaixa(selecionados);
+  info.textContent = `${selecionados.size} pedido(s) selecionado(s) · ${itens.length} palete(s)`;
+  barra.classList.remove('hidden');
+  btn.disabled = false;
+  btn.textContent = '🗑 Dar baixa nos selecionados';
+}
+
+function limparSelecao() {
+  selecionados.clear();
+  renderizar();
+}
+
+async function darBaixaSelecionados() {
+  if (!selecionados.size) return;
+  const itens = itensParaBaixa(selecionados);
+  if (!itens.length) return;
+
+  const numPedidos = selecionados.size;
+  const ok = confirm(
+    `Confirma dar baixa em ${itens.length} palete(s) de ${numPedidos} pedido(s)?\n\n` +
+    `Isso remove esses paletes do estoque (mesma baixa que o Romaneio faz). Não é possível desfazer por aqui.`
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById('btnDarBaixaSelecionados');
+  btn.disabled = true;
+  btn.textContent = '⏳ Enviando...';
+
+  const status = document.getElementById('cardStatus');
+  try {
+    const resp = await fetch(SAIDA_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itens })
+    });
+    if (!resp.ok) throw new Error('resposta ' + resp.status);
+
+    // Remoção otimista local (a publicação real no estoque.json leva alguns
+    // instantes -- o refresh automático abaixo confere o resultado de verdade).
+    const chavesRemovidas = new Set(selecionados);
+    paletes = paletes.filter(p => !chavesRemovidas.has((p.of || '') + '|' + (p.oc || '')));
+    selecionados.clear();
+    renderizar();
+
+    status.className = 'arq-status ok';
+    status.textContent = `✓ Baixa enviada para ${itens.length} palete(s). Atualizando o estoque em instantes...`;
+    setTimeout(carregar, 8000);
+  } catch (err) {
+    status.className = 'arq-status err';
+    status.textContent = '⚠ Não consegui enviar a baixa agora. Confira a internet e tente novamente.';
+    atualizarBarraSelecao();
+  }
+}
+
+document.getElementById('btnSelecionarTodos').addEventListener('click', () => {
+  const filtro = norm(document.getElementById('buscaCliente').value);
+  const porCliente = agrupar(paletes);
+  [...porCliente.keys()]
+    .filter(c => !filtro || norm(c).includes(filtro))
+    .forEach(c => porCliente.get(c).forEach(g => selecionados.add(g.of + '|' + g.oc)));
+  renderizar();
+});
+document.getElementById('btnLimparSelecaoTopo').addEventListener('click', limparSelecao);
+document.getElementById('btnLimparSelecao').addEventListener('click', limparSelecao);
+document.getElementById('btnDarBaixaSelecionados').addEventListener('click', darBaixaSelecionados);
 
 carregar();
 setInterval(carregar, 60000);
