@@ -126,6 +126,7 @@ td.destaque { font-weight: 700; }
 }
 
 th.chk, td.chk { width: 30px; text-align: center; padding-left: 12px; padding-right: 4px; }
+td.data-prod { white-space: nowrap; color: #5a7797; font-size: 13px; }
 input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color: #1a56a0; }
 .cliente-titulo { display: flex; align-items: center; gap: 10px; }
 .cliente-titulo .chk-cliente { flex-shrink: 0; }
@@ -212,6 +213,31 @@ function norm(s) {
   return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+// "DD/MM/AAAA" + "HH:MM" (formato que o app de etiquetas grava) -> Date real,
+// pra dar pra comparar/ordenar qual palete foi produzido antes/depois.
+function parseDataHora(dataStr, horaStr) {
+  const m = String(dataStr || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  const hm = String(horaStr || '').match(/^(\d{1,2}):(\d{2})/);
+  const h = hm ? hm[1] : '0';
+  const mi = hm ? hm[2] : '0';
+  const dt = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+  return isNaN(dt.getTime()) ? null : dt;
+}
+function fmtDataHora(dt) {
+  return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' '
+    + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+// Se todos os paletes do pedido saíram de uma vez, mostra só uma data/hora;
+// se a produção se espalhou por mais de um momento, mostra o intervalo.
+function fmtProduzidoEm(g) {
+  if (!g.primeiraProducao) return '—';
+  const a = fmtDataHora(g.primeiraProducao);
+  const b = fmtDataHora(g.ultimaProducao);
+  return a === b ? a : `${a} → ${b}`;
+}
+
 async function carregar() {
   const status = document.getElementById('cardStatus');
   status.className = 'arq-status info';
@@ -253,11 +279,17 @@ function agrupar(lista) {
         of: p.of || '', oc: p.oc || '', papel: p.papelao || '',
         medida: p.medida || '', numPaletes: 0, chapas: 0,
         qtdePedido: parseFloat(p.qtdePedido) || 0,
+        primeiraProducao: null, ultimaProducao: null,
       });
     }
     const g = grupos.get(chave);
     g.numPaletes += 1;
     g.chapas += Number(p.chapas) || 0;
+    const dt = parseDataHora(p.data, p.hora);
+    if (dt) {
+      if (!g.primeiraProducao || dt < g.primeiraProducao) g.primeiraProducao = dt;
+      if (!g.ultimaProducao || dt > g.ultimaProducao) g.ultimaProducao = dt;
+    }
   }
   return porCliente;
 }
@@ -319,6 +351,7 @@ function renderizar() {
         <td>${esc(g.oc || '—')}</td>
         <td>${esc(g.papel || '—')}</td>
         <td>${esc(g.medida || '—')}</td>
+        <td class="data-prod">${esc(fmtProduzidoEm(g))}</td>
         <td class="num">${fmt(g.numPaletes)}</td>
         <td class="num">${fmt(g.chapas)}</td>
         <td class="num">${g.qtdePedido ? fmt(g.qtdePedido) : '—'}</td>
@@ -334,7 +367,7 @@ function renderizar() {
         <div class="tabela-scroll">
           <table>
             <thead><tr>
-              <th class="chk"></th><th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
+              <th class="chk"></th><th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Produzido em</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
