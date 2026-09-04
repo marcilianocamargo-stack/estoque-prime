@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estoque-prime-v3';
+const CACHE_NAME = 'estoque-prime-v4';
 
 const FILES_TO_CACHE = [
   './index.html',

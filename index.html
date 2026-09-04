@@ -304,9 +304,18 @@ function renderizar() {
   porCliente.forEach(grupos => grupos.forEach(g => chavesAtuais.add(g.of + '|' + g.oc)));
   [...selecionados].forEach(k => { if (!chavesAtuais.has(k)) selecionados.delete(k); });
 
+  // Ordem de produção (mais recente primeiro), não alfabética -- tanto os
+  // clientes quanto os pedidos dentro de cada um.
+  const ultimaAtividade = (cliente) => {
+    let max = -Infinity;
+    for (const g of porCliente.get(cliente).values()) {
+      if (g.ultimaProducao && g.ultimaProducao.getTime() > max) max = g.ultimaProducao.getTime();
+    }
+    return max;
+  };
   const clientes = [...porCliente.keys()]
     .filter(c => !filtro || norm(c).includes(filtro))
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    .sort((a, b) => ultimaAtividade(b) - ultimaAtividade(a));
 
   const div = document.getElementById('listaClientes');
   const resumoTopo = document.getElementById('resumoTopo');
@@ -336,7 +345,12 @@ function renderizar() {
   const ordemClientesGrupos = [];
 
   div.innerHTML = clientes.map(cliente => {
-    const grupos = [...porCliente.get(cliente).values()].sort((a, b) => String(a.of).localeCompare(String(b.of)));
+    const grupos = [...porCliente.get(cliente).values()].sort((a, b) => {
+      const da = a.ultimaProducao ? a.ultimaProducao.getTime() : -Infinity;
+      const db = b.ultimaProducao ? b.ultimaProducao.getTime() : -Infinity;
+      if (db !== da) return db - da; // mais recente primeiro
+      return String(b.of).localeCompare(String(a.of)); // desempate: OP maior primeiro
+    });
     const chavesDoCliente = grupos.map(g => g.of + '|' + g.oc);
     ordemClientesGrupos.push(chavesDoCliente);
     const clienteTodoSelecionado = chavesDoCliente.length > 0 && chavesDoCliente.every(k => selecionados.has(k));
