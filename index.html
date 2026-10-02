@@ -372,8 +372,9 @@ function renderizar() {
   const ordemPaletes = [];
 
   // Dois modos de exibição:
-  //  - produção: um cartão por cliente, mais recente primeiro (padrão);
-  //  - OP: uma lista única em ordem crescente de OP (como o Romaneio), pra dar baixa.
+  //  - produção: clientes e pedidos do mais recente pro mais antigo (padrão);
+  //  - OP: clientes em ordem alfabética e, dentro de cada um, as OPs em ordem
+  //    crescente (como o Romaneio), pra dar baixa.
   const modoOP = ordenacao === 'op';
   const porRecente = (a, b) => {
     const da = a.ultimaProducao ? a.ultimaProducao.getTime() : -Infinity;
@@ -384,9 +385,13 @@ function renderizar() {
   const porOP = (a, b) =>
     String(a.of).localeCompare(String(b.of), 'pt-BR', { numeric: true }) ||
     String(a.oc).localeCompare(String(b.oc), 'pt-BR', { numeric: true });
-  const cartoes = modoOP
-    ? [{ titulo: 'Todas as OPs', grupos: clientes.flatMap(c => [...porCliente.get(c).values()]).sort(porOP) }]
-    : clientes.map(c => ({ titulo: c, grupos: [...porCliente.get(c).values()].sort(porRecente) }));
+  const clientesOrdenados = modoOP
+    ? [...clientes].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+    : clientes;
+  const cartoes = clientesOrdenados.map(c => ({
+    titulo: c,
+    grupos: [...porCliente.get(c).values()].sort(modoOP ? porOP : porRecente),
+  }));
 
   div.innerHTML = cartoes.map(({ titulo: cliente, grupos }) => {
     ordemClientesGrupos.push(grupos);
@@ -409,7 +414,6 @@ function renderizar() {
       <tr class="linha-pedido" data-g="${idxGrupo}" title="Clique para ${aberto ? 'recolher' : 'ver'} os paletes">
         <td class="chk"><input type="checkbox" class="chk-grupo" data-g="${idxGrupo}" data-parcial="${parcial ? 1 : 0}" ${todo ? 'checked' : ''} title="Selecionar todos os paletes desta OP"></td>
         <td class="destaque"><span class="caret">${aberto ? '▼' : '▶'}</span>${esc(g.of)}</td>
-        ${modoOP ? `<td>${esc(g.cliente)}</td>` : ''}
         <td>${esc(g.oc || '—')}</td>
         <td>${esc(g.papel || '—')}</td>
         <td>${esc(g.medida || '—')}</td>
@@ -431,7 +435,7 @@ function renderizar() {
           return `
       <tr class="linha-palete ${marcado ? 'sel' : ''}">
         <td class="chk"><input type="checkbox" class="chk-palete" data-p="${idxP}" ${marcado ? 'checked' : ''}></td>
-        <td class="sub-info" colspan="${modoOP ? 5 : 4}">Palete ${esc(p.numPalete)}${esc(peso)}</td>
+        <td class="sub-info" colspan="4">Palete ${esc(p.numPalete)}${esc(peso)}</td>
         <td class="data-prod">${dt ? esc(fmtDataHora(dt)) : '—'}</td>
         <td></td>
         <td class="num">${fmt(p.chapas)}</td>
@@ -450,7 +454,7 @@ function renderizar() {
         <div class="tabela-scroll">
           <table>
             <thead><tr>
-              <th class="chk"></th><th>OP</th>${modoOP ? '<th>Cliente</th>' : ''}<th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Produzido em</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
+              <th class="chk"></th><th>OP</th><th>OC</th><th>Papel</th><th>Medida (L × C)</th><th>Produzido em</th><th>Paletes</th><th>Chapas Produzidas</th><th>Qtde Pedido</th><th>Saldo</th>
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
