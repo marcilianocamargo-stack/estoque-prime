@@ -99,6 +99,12 @@ tbody tr:not(:last-child) td { border-bottom: 1px solid #eef3fa; }
 tbody tr:hover { background: #f7fafd; }
 td.num { font-weight: 800; color: #1a56a0; }
 td.destaque { font-weight: 700; }
+tr.linha-pedido { cursor: pointer; }
+.caret { display: inline-block; width: 14px; color: #7a92ac; font-size: 11px; }
+tr.linha-palete td { background: #f7fafd; font-size: 13px; color: #36506f; }
+tr.linha-palete td.sub-info { padding-left: 34px; }
+tr.linha-palete.sel td { background: #fff4f2; }
+tbody tr.linha-palete:hover td { background: #eef4ff; }
 
 .tabela-scroll { overflow-x: auto; }
 
@@ -203,7 +209,11 @@ const ESTOQUE_URL = 'https://raw.githubusercontent.com/marcilianocamargo-stack/c
 // feita por aqui é processada exatamente da mesma forma (remove do estoque.json).
 const SAIDA_WEBHOOK_URL = 'https://n8n.mcamargo.uk/webhook/saida-estoque';
 let paletes = [];
-let selecionados = new Set(); // chaves "of|oc" dos pedidos marcados pra dar baixa
+let selecionados = new Set(); // chaves "of|numPalete" dos paletes marcados pra dar baixa
+let expandidos = new Set();   // chaves "of|oc" dos pedidos com a lista de paletes aberta
+// Um palete é identificado por OP + nº do palete (é o que o webhook de baixa espera).
+function chavePalete(p) { return (p.of || '') + '|' + String(p.numPalete); }
+function chavesDoGrupo(g) { return g.lista.map(chavePalete); }
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -279,11 +289,12 @@ function agrupar(lista) {
         of: p.of || '', oc: p.oc || '', papel: p.papelao || '',
         medida: p.medida || '', numPaletes: 0, chapas: 0,
         qtdePedido: parseFloat(p.qtdePedido) || 0,
-        primeiraProducao: null, ultimaProducao: null,
+        primeiraProducao: null, ultimaProducao: null, lista: [],
       });
     }
     const g = grupos.get(chave);
     g.numPaletes += 1;
+    g.lista.push(p);
     g.chapas += Number(p.chapas) || 0;
     const dt = parseDataHora(p.data, p.hora);
     if (dt) {
@@ -298,10 +309,9 @@ function renderizar() {
   const filtro = norm(document.getElementById('buscaCliente').value);
   const porCliente = agrupar(paletes);
 
-  // Limpa da seleção qualquer pedido que já não exista mais nos dados atuais
+  // Limpa da seleção qualquer palete que já não exista mais nos dados atuais
   // (ex.: baixa já processada em outro lugar, ou saiu do estoque).
-  const chavesAtuais = new Set();
-  porCliente.forEach(grupos => grupos.forEach(g => chavesAtuais.add(g.of + '|' + g.oc)));
+  const chavesAtuais = new Set(paletes.map(chavePalete));
   [...selecionados].forEach(k => { if (!chavesAtuais.has(k)) selecionados.delete(k); });
 
   // Ordem de produção (mais recente primeiro), não alfabética -- tanto os
@@ -339,10 +349,11 @@ function renderizar() {
   }, 0);
   resumoTopo.textContent = `${clientes.length} cliente(s) · ${totalPaletesFiltrado} palete(s) em estoque`;
 
-  // Arrays paralelos à ordem de renderização dos checkboxes -- evita ter que
-  // colocar nome de cliente/OC cru dentro de atributo HTML (escaping).
+  // Arrays paralelos à ordem de renderização dos checkboxes/linhas -- evita ter
+  // que colocar nome de cliente/OC cru dentro de atributo HTML (escaping).
   const ordemGrupos = [];
   const ordemClientesGrupos = [];
+  const ordemPaletes = [];
 
   div.innerHTML = clientes.map(cliente => {
     const grupos = [...porCliente.get(cliente).values()].sort((a, b) => {
@@ -351,17 +362,26 @@ function renderizar() {
       if (db !== da) return db - da; // mais recente primeiro
       return String(b.of).localeCompare(String(a.of)); // desempate: OP maior primeiro
     });
-    const chavesDoCliente = grupos.map(g => g.of + '|' + g.oc);
-    ordemClientesGrupos.push(chavesDoCliente);
-    const clienteTodoSelecionado = chavesDoCliente.length > 0 && chavesDoCliente.every(k => selecionados.has(k));
+    ordemClientesGrupos.push(grupos);
+    const todasChaves = grupos.flatMap(chavesDoGrupo);
+    const nSelCliente = todasChaves.filter(k => selecionados.has(k)).length;
+    const clienteTodo = todasChaves.length > 0 && nSelCliente === todasChaves.length;
+    const clienteParcial = nSelCliente > 0 && !clienteTodo;
 
     const linhas = grupos.map(g => {
       const chave = g.of + '|' + g.oc;
-      ordemGrupos.push(chave);
-      return `
-      <tr>
-        <td class="chk"><input type="checkbox" class="chk-grupo" ${selecionados.has(chave) ? 'checked' : ''}></td>
-        <td class="destaque">${esc(g.of)}</td>
+      const idxGrupo = ordemGrupos.length;
+      ordemGrupos.push(g);
+      const chavesG = chavesDoGrupo(g);
+      const nSel = chavesG.filter(k => selecionados.has(k)).length;
+      const todo = chavesG.length > 0 && nSel === chavesG.length;
+      const parcial = nSel > 0 && !todo;
+      const aberto = expandidos.has(chave);
+
+      let html = `
+      <tr class="linha-pedido" data-g="${idxGrupo}" title="Clique para ${aberto ? 'recolher' : 'ver'} os paletes">
+        <td class="chk"><input type="checkbox" class="chk-grupo" data-g="${idxGrupo}" data-parcial="${parcial ? 1 : 0}" ${todo ? 'checked' : ''} title="Selecionar todos os paletes desta OP"></td>
+        <td class="destaque"><span class="caret">${aberto ? '▼' : '▶'}</span>${esc(g.of)}</td>
         <td>${esc(g.oc || '—')}</td>
         <td>${esc(g.papel || '—')}</td>
         <td>${esc(g.medida || '—')}</td>
@@ -371,11 +391,32 @@ function renderizar() {
         <td class="num">${g.qtdePedido ? fmt(g.qtdePedido) : '—'}</td>
         <td class="num" style="color:${g.qtdePedido && g.chapas >= g.qtdePedido ? '#2e7d32' : '#c62828'}">${g.qtdePedido ? fmt(g.qtdePedido - g.chapas) : '—'}</td>
       </tr>`;
+
+      if (aberto) {
+        const lista = [...g.lista].sort((a, b) => String(a.numPalete).localeCompare(String(b.numPalete), 'pt-BR', { numeric: true }));
+        html += lista.map(p => {
+          const idxP = ordemPaletes.length;
+          ordemPaletes.push(p);
+          const marcado = selecionados.has(chavePalete(p));
+          const dt = parseDataHora(p.data, p.hora);
+          const peso = Number(p.peso) ? ' · ' + Number(p.peso).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' kg' : '';
+          return `
+      <tr class="linha-palete ${marcado ? 'sel' : ''}">
+        <td class="chk"><input type="checkbox" class="chk-palete" data-p="${idxP}" ${marcado ? 'checked' : ''}></td>
+        <td class="sub-info" colspan="4">Palete ${esc(p.numPalete)}${esc(peso)}</td>
+        <td class="data-prod">${dt ? esc(fmtDataHora(dt)) : '—'}</td>
+        <td></td>
+        <td class="num">${fmt(p.chapas)}</td>
+        <td></td><td></td>
+      </tr>`;
+        }).join('');
+      }
+      return html;
     }).join('');
     return `
       <div class="cliente-card">
         <div class="cliente-titulo">
-          <input type="checkbox" class="chk-cliente" ${clienteTodoSelecionado ? 'checked' : ''} title="Selecionar todos os pedidos de ${esc(cliente)}">
+          <input type="checkbox" class="chk-cliente" data-parcial="${clienteParcial ? 1 : 0}" ${clienteTodo ? 'checked' : ''} title="Selecionar todos os paletes de ${esc(cliente)}">
           <span>${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span></span>
         </div>
         <div class="tabela-scroll">
@@ -389,21 +430,38 @@ function renderizar() {
       </div>`;
   }).join('');
 
-  div.querySelectorAll('.chk-grupo').forEach((chk, i) => {
+  div.querySelectorAll('input[data-parcial="1"]').forEach(c => { c.indeterminate = true; });
+
+  // Clicar na linha do pedido abre/fecha a lista de paletes dele.
+  div.querySelectorAll('tr.linha-pedido').forEach(tr => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('input')) return;
+      const g = ordemGrupos[Number(tr.dataset.g)];
+      const chave = g.of + '|' + g.oc;
+      if (expandidos.has(chave)) expandidos.delete(chave); else expandidos.add(chave);
+      renderizar();
+    });
+  });
+  // Checkbox do pedido = todos os paletes daquela OP de uma vez.
+  div.querySelectorAll('.chk-grupo').forEach(chk => {
     chk.addEventListener('change', () => {
-      const chave = ordemGrupos[i];
-      if (chk.checked) selecionados.add(chave); else selecionados.delete(chave);
-      atualizarBarraSelecao();
-      // reflete no checkbox "selecionar todos" do cliente sem re-renderizar tudo
-      const card = chk.closest('.cliente-card');
-      const chkCliente = card.querySelector('.chk-cliente');
-      const todasChk = [...card.querySelectorAll('.chk-grupo')];
-      chkCliente.checked = todasChk.every(c => c.checked);
+      const chaves = chavesDoGrupo(ordemGrupos[Number(chk.dataset.g)]);
+      if (chk.checked) chaves.forEach(c => selecionados.add(c));
+      else chaves.forEach(c => selecionados.delete(c));
+      renderizar();
+    });
+  });
+  // Checkbox de um palete só.
+  div.querySelectorAll('.chk-palete').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const k = chavePalete(ordemPaletes[Number(chk.dataset.p)]);
+      if (chk.checked) selecionados.add(k); else selecionados.delete(k);
+      renderizar();
     });
   });
   div.querySelectorAll('.chk-cliente').forEach((chk, i) => {
     chk.addEventListener('change', () => {
-      const chaves = ordemClientesGrupos[i];
+      const chaves = ordemClientesGrupos[i].flatMap(chavesDoGrupo);
       if (chk.checked) chaves.forEach(c => selecionados.add(c));
       else chaves.forEach(c => selecionados.delete(c));
       renderizar();
@@ -414,16 +472,14 @@ function renderizar() {
 }
 
 // ========== SELEÇÃO MÚLTIPLA + BAIXA EM LOTE ==========
-// Cada linha (OP+OC) representa um pedido inteiro; dar baixa manda TODOS os
-// paletes daquele pedido pro mesmo webhook que o Romaneio usa (saida-estoque).
+// A seleção é por palete (nem sempre o pedido inteiro sai na mesma carga);
+// marcar a OP seleciona todos os paletes dela. A baixa manda os paletes
+// marcados pro mesmo webhook que o Romaneio usa (saida-estoque).
 function itensParaBaixa(chaves) {
   const set = new Set(chaves);
-  const itens = [];
-  paletes.forEach(p => {
-    const chave = (p.of || '') + '|' + (p.oc || '');
-    if (set.has(chave)) itens.push({ of: p.of, numPalete: String(p.numPalete) });
-  });
-  return itens;
+  return paletes
+    .filter(p => set.has(chavePalete(p)))
+    .map(p => ({ of: p.of, numPalete: String(p.numPalete) }));
 }
 
 function atualizarBarraSelecao() {
@@ -435,7 +491,8 @@ function atualizarBarraSelecao() {
     return;
   }
   const itens = itensParaBaixa(selecionados);
-  info.textContent = `${selecionados.size} pedido(s) selecionado(s) · ${itens.length} palete(s)`;
+  const ops = new Set(itens.map(i => i.of));
+  info.textContent = `${itens.length} palete(s) selecionado(s) · ${ops.size} OP(s)`;
   barra.classList.remove('hidden');
   btn.disabled = false;
   btn.textContent = '🗑 Dar baixa nos selecionados';
@@ -451,9 +508,9 @@ async function darBaixaSelecionados() {
   const itens = itensParaBaixa(selecionados);
   if (!itens.length) return;
 
-  const numPedidos = selecionados.size;
+  const numOps = new Set(itens.map(i => i.of)).size;
   const ok = confirm(
-    `Confirma dar baixa em ${itens.length} palete(s) de ${numPedidos} pedido(s)?\n\n` +
+    `Confirma dar baixa em ${itens.length} palete(s) de ${numOps} OP(s)?\n\n` +
     `Isso remove esses paletes do estoque (mesma baixa que o Romaneio faz). Não é possível desfazer por aqui.`
   );
   if (!ok) return;
@@ -474,7 +531,7 @@ async function darBaixaSelecionados() {
     // Remoção otimista local (a publicação real no estoque.json leva alguns
     // instantes -- o refresh automático abaixo confere o resultado de verdade).
     const chavesRemovidas = new Set(selecionados);
-    paletes = paletes.filter(p => !chavesRemovidas.has((p.of || '') + '|' + (p.oc || '')));
+    paletes = paletes.filter(p => !chavesRemovidas.has(chavePalete(p)));
     selecionados.clear();
     renderizar();
 
@@ -493,7 +550,7 @@ document.getElementById('btnSelecionarTodos').addEventListener('click', () => {
   const porCliente = agrupar(paletes);
   [...porCliente.keys()]
     .filter(c => !filtro || norm(c).includes(filtro))
-    .forEach(c => porCliente.get(c).forEach(g => selecionados.add(g.of + '|' + g.oc)));
+    .forEach(c => porCliente.get(c).forEach(g => chavesDoGrupo(g).forEach(k => selecionados.add(k))));
   renderizar();
 });
 document.getElementById('btnLimparSelecaoTopo').addEventListener('click', limparSelecao);
