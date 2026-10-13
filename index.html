@@ -160,6 +160,47 @@ input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color:
 #btnDarBaixaSelecionados { background: white; color: #c62828; }
 #btnDarBaixaSelecionados:disabled { opacity: .6; cursor: default; }
 
+/* ===== Gerar relatório ===== */
+.modal-fundo {
+  position: fixed; inset: 0; background: rgba(15,30,46,.55); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 14px;
+}
+.modal-fundo.hidden { display: none; }
+.modal-rel {
+  background: white; border-radius: 16px; width: 100%; max-width: 560px;
+  max-height: 90vh; display: flex; flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,.3);
+}
+.modal-rel h2 { font-size: 18px; color: #1a56a0; padding: 18px 20px 4px; }
+.modal-rel .modal-sub { font-size: 13px; color: #6a86a8; padding: 0 20px 10px; }
+.modal-rel .modal-corpo { padding: 0 20px; overflow-y: auto; flex: 1; }
+.modal-rel input[type=text] {
+  width: 100%; padding: 10px 12px; border-radius: 8px; border: 2px solid #b8cfe8;
+  font-size: 15px; outline: none; background: #f4f8ff; margin-bottom: 8px;
+}
+.modal-rel input[type=text]:focus { border-color: #1a56a0; background: white; }
+.rel-lista { border: 1px solid #e4ecf6; border-radius: 10px; margin-top: 6px; }
+.rel-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;
+  border-bottom: 1px solid #eef3fa; font-size: 14px;
+}
+.rel-item:last-child { border-bottom: none; }
+.rel-item:hover { background: #f7fafd; }
+.rel-item .rel-nome { flex: 1; font-weight: 600; color: #26405f; }
+.rel-item .rel-qtd { font-size: 12px; color: #7a92ac; white-space: nowrap; }
+.rel-label { display: block; font-size: 12px; font-weight: 700; color: #7a92ac; text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
+.modal-rel .modal-rodape {
+  padding: 14px 20px 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid #e4ecf6; margin-top: 12px;
+}
+.modal-rel .rel-resumo { flex: 1; font-size: 13px; font-weight: 700; color: #4a6a8f; min-width: 140px; }
+.modal-rel .modal-rodape button {
+  border: none; border-radius: 8px; padding: 11px 16px; font-size: 14px; font-weight: 800; cursor: pointer;
+}
+#btnCancelarRelatorio { background: #eef4ff; color: #1a56a0; }
+#btnGerarRelatorio { background: #1a56a0; color: white; }
+#btnGerarRelatorio:disabled { opacity: .5; cursor: default; }
+
 @media (max-width: 560px) {
   .header-atualizado { display: none; }
   th, td { padding: 8px 10px; font-size: 13px; }
@@ -195,12 +236,35 @@ input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color:
     <div class="acoes-selecao">
       <button type="button" class="btn-link" id="btnSelecionarTodos">☑ Selecionar todos os visíveis</button>
       <button type="button" class="btn-link" id="btnLimparSelecaoTopo">Limpar seleção</button>
+      <button type="button" class="btn-link" id="btnAbrirRelatorio">📄 Gerar relatório (Excel)</button>
     </div>
   </div>
 
   <div id="listaClientes"></div>
 
   <div class="footer">Consulta de Estoque · Prime Ondulados · atualiza sozinho a cada minuto</div>
+</div>
+
+<div class="modal-fundo hidden" id="modalRelatorio">
+  <div class="modal-rel" role="dialog" aria-modal="true" aria-labelledby="tituloRelatorio">
+    <h2 id="tituloRelatorio">📄 Gerar relatório de estoque</h2>
+    <div class="modal-sub">Marque o(s) cliente(s) que entram no relatório. Pode marcar mais de um (ex.: nomes diferentes do mesmo cliente) — todos saem juntos no mesmo arquivo.</div>
+    <div class="modal-corpo">
+      <input type="text" id="relBusca" placeholder="🔍 Procurar cliente..." autocomplete="off">
+      <div class="acoes-selecao" style="margin-top:0">
+        <button type="button" class="btn-link" id="relMarcarVisiveis">☑ Marcar os da busca</button>
+        <button type="button" class="btn-link" id="relLimpar">Limpar</button>
+      </div>
+      <div class="rel-lista" id="relLista"></div>
+      <label class="rel-label" for="relNome">Nome do relatório (também é o nome do arquivo)</label>
+      <input type="text" id="relNome" autocomplete="off">
+    </div>
+    <div class="modal-rodape">
+      <div class="rel-resumo" id="relResumo"></div>
+      <button type="button" id="btnCancelarRelatorio">Cancelar</button>
+      <button type="button" id="btnGerarRelatorio">⬇ Gerar Excel</button>
+    </div>
+  </div>
 </div>
 
 <div class="barra-selecao hidden" id="barraSelecao">
@@ -277,7 +341,8 @@ async function carregar() {
     if (dados.atualizadoEm) {
       const d = new Date(dados.atualizadoEm);
       if (!isNaN(d.getTime())) {
-        quando = 'Atualizado ' + d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+        estoqueAtualizadoEm = d;
+        quando ='Atualizado ' + d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
       }
     }
     document.getElementById('headerAtualizado').textContent = quando;
@@ -595,6 +660,277 @@ document.getElementById('btnOrdOP').addEventListener('click', () => definirOrden
 document.getElementById('btnLimparSelecaoTopo').addEventListener('click', limparSelecao);
 document.getElementById('btnLimparSelecao').addEventListener('click', limparSelecao);
 document.getElementById('btnDarBaixaSelecionados').addEventListener('click', darBaixaSelecionados);
+
+// ========== GERAR RELATÓRIO (EXCEL) ==========
+// Relatório do que está pronto em estoque (paletes produzidos e ainda não
+// expedidos) dos clientes escolhidos, no mesmo layout do relatório de produção:
+// Arquivo Fonte | Cliente | OP | OC | OF | Papel | Medida | Qtd Produzida |
+// Qtd Pedido | Saldo, com linha de Total e rodapé. O mesmo cliente costuma
+// aparecer com grafias diferentes no estoque -- por isso a escolha é múltipla
+// e tudo sai junto no mesmo arquivo.
+const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+let relClientes = [];            // [{ nome, paletes, chapas }] -- ordem alfabética
+let relSelecionados = new Set(); // nomes de cliente marcados
+let relNomeEditado = false;      // true quando o usuário digitou o nome na mão
+let estoqueAtualizadoEm = null;
+
+let _exceljsPromise = null;
+function carregarExcelJS() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if (!_exceljsPromise) {
+    _exceljsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = EXCELJS_URL;
+      s.onload = () => window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error('ExcelJS'));
+      s.onerror = () => { _exceljsPromise = null; reject(new Error('rede')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _exceljsPromise;
+}
+
+// "0,559 X 1,389" (metros) -> "0559 X 1389" (mm, 4 dígitos), como no relatório de produção.
+function medidaRelatorio(m) {
+  const partes = String(m || '').split(/x/i).map(s => s.trim());
+  if (partes.length !== 2) return String(m || '');
+  const conv = partes.map(p => {
+    if (/^\d+[.,]\d+$/.test(p)) return String(Math.round(parseFloat(p.replace(',', '.')) * 1000)).padStart(4, '0');
+    if (/^\d+$/.test(p)) return p.padStart(4, '0');
+    return null;
+  });
+  return conv.includes(null) ? String(m) : conv.join(' X ');
+}
+
+function normPalavras(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+}
+// Nome sugerido: palavras iniciais em comum entre os clientes marcados
+// ("RM Embalagens", "RM Embalagens ( Daiane ... )" -> "RM EMBALAGENS").
+function nomeSugerido(nomes) {
+  if (!nomes.length) return '';
+  const listas = nomes.map(normPalavras);
+  let prefixo = listas[0].slice();
+  for (const l of listas.slice(1)) {
+    let i = 0;
+    while (i < prefixo.length && i < l.length && prefixo[i] === l[i]) i++;
+    prefixo = prefixo.slice(0, i);
+  }
+  if (prefixo.length) return prefixo.join(' ');
+  return nomes.length === 1 ? listas[0].join(' ') : 'CLIENTES SELECIONADOS';
+}
+
+function relMontarClientes() {
+  const m = new Map();
+  for (const p of paletes) {
+    const nome = p.cliente || '(sem cliente)';
+    if (!m.has(nome)) m.set(nome, { nome, paletes: 0, chapas: 0 });
+    const c = m.get(nome);
+    c.paletes += 1;
+    c.chapas += Number(p.chapas) || 0;
+  }
+  relClientes = [...m.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
+}
+
+function relAtualizarResumo() {
+  const n = relSelecionados.size;
+  let pal = 0, chapas = 0;
+  for (const c of relClientes) if (relSelecionados.has(c.nome)) { pal += c.paletes; chapas += c.chapas; }
+  document.getElementById('relResumo').textContent = n
+    ? `${n} cliente(s) · ${pal} palete(s) · ${fmt(chapas)} chapas`
+    : 'Nenhum cliente marcado';
+  document.getElementById('btnGerarRelatorio').disabled = !n;
+  if (!relNomeEditado) {
+    document.getElementById('relNome').value = nomeSugerido(relClientes.filter(c => relSelecionados.has(c.nome)).map(c => c.nome));
+  }
+}
+
+function relRenderLista() {
+  const filtro = norm(document.getElementById('relBusca').value);
+  const visiveis = relClientes.filter(c => !filtro || norm(c.nome).includes(filtro));
+  const el = document.getElementById('relLista');
+  if (!visiveis.length) {
+    el.innerHTML = '<div class="vazio" style="padding:20px">Nenhum cliente encontrado.</div>';
+    return;
+  }
+  el.innerHTML = visiveis.map(c => `
+    <label class="rel-item">
+      <input type="checkbox" data-i="${relClientes.indexOf(c)}" ${relSelecionados.has(c.nome) ? 'checked' : ''}>
+      <span class="rel-nome">${esc(c.nome)}</span>
+      <span class="rel-qtd">${c.paletes} palete(s) · ${fmt(c.chapas)} ch.</span>
+    </label>`).join('');
+}
+
+function abrirRelatorio() {
+  relMontarClientes();
+  // Se há clientes filtrados na tela de cima, já deixa a busca igual.
+  document.getElementById('relBusca').value = document.getElementById('buscaCliente').value;
+  relSelecionados = new Set([...relSelecionados].filter(n => relClientes.some(c => c.nome === n)));
+  relNomeEditado = false;
+  document.getElementById('modalRelatorio').classList.remove('hidden');
+  relRenderLista();
+  relAtualizarResumo();
+}
+function fecharRelatorio() {
+  document.getElementById('modalRelatorio').classList.add('hidden');
+}
+
+// Uma linha por OP + OC + papel + medida (a mesma OP pode ter mais de um pedido).
+function linhasRelatorio(nomesClientes) {
+  const grupos = new Map();
+  for (const p of paletes) {
+    const cliente = p.cliente || '(sem cliente)';
+    if (!nomesClientes.has(cliente)) continue;
+    if (String(p.resultado || '').toUpperCase() === 'NOK') continue; // palete reprovado não é "pronto"
+    const papel = p.papelao || '';
+    const medida = medidaRelatorio(p.medida);
+    const chave = [cliente, p.of, p.oc, p.ofCentral, papel, medida].join('|');
+    if (!grupos.has(chave)) {
+      grupos.set(chave, {
+        cliente, op: String(p.of || ''), oc: String(p.oc || ''), of: String(p.ofCentral || ''),
+        papel, medida, produzida: 0, pedido: parseFloat(p.qtdePedido) || 0,
+      });
+    }
+    grupos.get(chave).produzida += Number(p.chapas) || 0;
+  }
+  const num = (s) => { const n = parseInt(s, 10); return isNaN(n) ? Infinity : n; };
+  return [...grupos.values()].sort((a, b) =>
+    (num(a.of) - num(b.of)) || (num(a.op) - num(b.op)) ||
+    a.oc.localeCompare(b.oc, 'pt-BR', { numeric: true }) ||
+    a.cliente.localeCompare(b.cliente, 'pt-BR'));
+}
+
+function nomeArquivoSeguro(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'Clientes';
+}
+
+async function gerarRelatorio() {
+  const nomes = new Set(relSelecionados);
+  if (!nomes.size) return;
+  const linhas = linhasRelatorio(nomes);
+  if (!linhas.length) {
+    alert('Os clientes marcados não têm paletes prontos em estoque.');
+    return;
+  }
+  const nomeRel = (document.getElementById('relNome').value || '').trim() || nomeSugerido([...nomes]);
+  const btn = document.getElementById('btnGerarRelatorio');
+  const textoBtn = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Gerando...';
+  try {
+    const ExcelJS = await carregarExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const abaNome = ('Estoque ' + nomeRel).replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31).trim();
+    const ws = wb.addWorksheet(abaNome || 'Estoque');
+
+    const COR_BORDA = { argb: 'FFCCD8E4' };
+    const borda = { style: 'thin', color: COR_BORDA };
+    const bordas = { top: borda, left: borda, bottom: borda, right: borda };
+    const larguraCliente = Math.max(22.83, Math.min(52, Math.max(...linhas.map(l => l.cliente.length)) + 3));
+    ws.columns = [
+      { width: 42.83 }, { width: larguraCliente }, { width: 10.83 }, { width: 10.83 }, { width: 8.83 },
+      { width: 8.83 }, { width: 14.83 }, { width: 13.83 }, { width: 11.83 }, { width: 9.83 },
+    ];
+
+    const cab = ws.addRow(['Arquivo Fonte', 'Cliente', 'OP', 'OC', 'OF', 'Papel', 'Medida', 'Qtd Produzida', 'Qtd Pedido', 'Saldo']);
+    cab.eachCell(c => {
+      c.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1E2E' } };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+      c.border = bordas;
+    });
+
+    let totProd = 0, totPed = 0, totSaldo = 0;
+    for (const l of linhas) {
+      const temPedido = l.pedido > 0;
+      const saldo = temPedido ? l.produzida - l.pedido : null; // mesmo sinal do exemplo: produzido − pedido
+      totProd += l.produzida;
+      if (temPedido) { totPed += l.pedido; totSaldo += saldo; }
+      const r = ws.addRow([
+        'Controle de Produção', l.cliente, l.op, l.oc, l.of, l.papel, l.medida,
+        l.produzida, temPedido ? l.pedido : null, saldo,
+      ]);
+      r.eachCell({ includeEmpty: true }, (c, col) => {
+        c.font = { name: 'Calibri', size: 11 };
+        c.border = bordas;
+        c.alignment = { horizontal: col >= 8 ? 'right' : 'left', vertical: 'middle' };
+      });
+    }
+
+    const tot = ws.addRow([null, null, null, null, null, null, 'Total', totProd, totPed, totSaldo]);
+    for (let col = 7; col <= 10; col++) {
+      const c = tot.getCell(col);
+      c.font = { name: 'Calibri', size: 11, bold: true };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBE7F3' } };
+      c.border = { top: borda };
+      c.alignment = { horizontal: col === 7 ? 'left' : 'right', vertical: 'middle' };
+    }
+
+    ws.addRow([]);
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    let nota = `Relatório gerado em ${hoje}. Fonte: estoque Prime Ondulados (paletes prontos, ainda não expedidos) · Consulta de Estoque.`;
+    if (estoqueAtualizadoEm && !isNaN(estoqueAtualizadoEm.getTime())) {
+      nota += ` Estoque atualizado em ${estoqueAtualizadoEm.toLocaleDateString('pt-BR')} ${estoqueAtualizadoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
+    }
+    const rn = ws.addRow([nota]);
+    ws.mergeCells(rn.number, 1, rn.number, 10);
+    const cn = rn.getCell(1);
+    cn.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF51637A' } };
+    cn.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    rn.height = 30;
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Relatorio_Estoque_${nomeArquivoSeguro(nomeRel)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+    fecharRelatorio();
+    const status = document.getElementById('cardStatus');
+    status.className = 'arq-status ok';
+    status.textContent = `✓ Relatório gerado: ${linhas.length} linha(s), ${fmt(totProd)} chapas em estoque.`;
+  } catch (err) {
+    alert('Não consegui gerar o relatório agora. Confira a internet e tente de novo.');
+  } finally {
+    btn.textContent = textoBtn;
+    relAtualizarResumo();
+  }
+}
+
+document.getElementById('btnAbrirRelatorio').addEventListener('click', abrirRelatorio);
+document.getElementById('btnCancelarRelatorio').addEventListener('click', fecharRelatorio);
+document.getElementById('btnGerarRelatorio').addEventListener('click', gerarRelatorio);
+document.getElementById('modalRelatorio').addEventListener('click', (e) => {
+  if (e.target.id === 'modalRelatorio') fecharRelatorio();
+});
+document.getElementById('relBusca').addEventListener('input', relRenderLista);
+document.getElementById('relNome').addEventListener('input', () => { relNomeEditado = true; });
+document.getElementById('relLista').addEventListener('change', (e) => {
+  const chk = e.target.closest('input[type=checkbox]');
+  if (!chk) return;
+  const c = relClientes[Number(chk.dataset.i)];
+  if (!c) return;
+  if (chk.checked) relSelecionados.add(c.nome); else relSelecionados.delete(c.nome);
+  relAtualizarResumo();
+});
+document.getElementById('relMarcarVisiveis').addEventListener('click', () => {
+  const filtro = norm(document.getElementById('relBusca').value);
+  relClientes.filter(c => !filtro || norm(c.nome).includes(filtro)).forEach(c => relSelecionados.add(c.nome));
+  relRenderLista();
+  relAtualizarResumo();
+});
+document.getElementById('relLimpar').addEventListener('click', () => {
+  relSelecionados.clear();
+  relNomeEditado = false;
+  relRenderLista();
+  relAtualizarResumo();
+});
 
 carregar();
 setInterval(carregar, 60000);
