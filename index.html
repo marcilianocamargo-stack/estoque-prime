@@ -464,6 +464,8 @@ function renderizar() {
     const nSelCliente = todasChaves.filter(k => selecionados.has(k)).length;
     const clienteTodo = todasChaves.length > 0 && nSelCliente === todasChaves.length;
     const clienteParcial = nSelCliente > 0 && !clienteTodo;
+    const totalPaletesCliente = grupos.reduce((s, g) => s + g.numPaletes, 0);
+    const pesoTotalCliente = grupos.reduce((s, g) => s + g.lista.reduce((t, p) => t + (Number(p.peso) || 0), 0), 0);
 
     const linhas = grupos.map(g => {
       const chave = g.of + '|' + g.oc;
@@ -514,7 +516,7 @@ function renderizar() {
       <div class="cliente-card">
         <div class="cliente-titulo">
           <input type="checkbox" class="chk-cliente" data-parcial="${clienteParcial ? 1 : 0}" ${clienteTodo ? 'checked' : ''} title="Selecionar todos os paletes de ${esc(cliente)}">
-          <span>${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span></span>
+          <span>${esc(cliente)}<span class="qtd-ops">${grupos.length} OP(s)</span><span class="qtd-ops">${fmt(totalPaletesCliente)} palete(s)</span><span class="qtd-ops">${pesoTotalCliente.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} kg</span></span>
         </div>
         <div class="tabela-scroll">
           <table>
